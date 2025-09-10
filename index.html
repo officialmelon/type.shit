@@ -24,7 +24,7 @@
 		.stat { flex flex-col gap-1 }
 		.stat-value { text-[#3b82f6] text-3xl font-bold }
 		.stat-label { text-[#646669] text-sm }
-		.restart-btn { bg-[#3b82f6] text-[#ffffff] px-6 py-3 font-roboto rounded font-bold cursor-pointer hover:bg-[#2563eb] mx-auto block }
+		.restart-btn { mx-auto block cursor-pointer }
 		.results-overlay { position-fixed top-0 left-0 w-full h-full bg-[#00000080] flex items-center justify-center }
 		.results-modal { bg-[#2c2e31] rounded-lg p-8 text-center max-w-md w-full mx-4 }
 		.results-title { text-[#3b82f6] text-2xl font-bold mb-6 }
@@ -75,7 +75,7 @@
 	<!-- Test Area -->
 	<div style="test-area">
 		<div id="test-words" style="text-display">
-			Press tab to start
+			Press any key to start
 		</div>
 	</div>
 	
@@ -98,9 +98,9 @@
 	</div>
 	
 	<!-- Restart Button -->
-	<button id="restart-btn" style="restart-btn">
-	    <img src="/assets/reset.svg" alt="Restart" />Restart
-	</button>
+	<div id="restart-btn" style="restart-btn">
+		<img style="mx-auto block" src="https://github.com/officialmelon/type.shit/blob/master/assets/reset.png?raw=true" style="w-12 h-12"  /> 
+	</div>
 
 </body>
 </html>

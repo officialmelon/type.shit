@@ -39,10 +39,19 @@ local DATA = {
         "Buss","Facedev","Game","Godot","Love","Peace","Unity","CSharp","JavaScript","Python","Hackathon",
         "Gurt","Gurted","Luis","Mackabu","Github","open","source","code","ai",
         "Machine","Deep","Learning","Real","Thick","It"
-    end
+    }
+}
 
-    --======================================================================
-    -- Input handling
+--======================================================================
+-- Utils
+--======================================================================
+local function dbg(fmt, ...)
+    if not DEBUG then return end
+    local ok, msg = pcall(string.format, fmt, ...)
+    print(ok and msg or "[dbg-format-error] " .. tostring(fmt))
+end
+
+-- Normalize Time.now() to seconds across environments (ns/ms/s)
 local function nowSeconds()
     local ok, t = pcall(function() return Time and Time.now and Time.now() or 0 end)
     if not ok then return 0 end
@@ -93,9 +102,19 @@ local E = {
     word30          = gurt.select('#words-30'),
     word60          = gurt.select('#words-60'),
     wordInf         = gurt.select('#words-inf'),
-end
+}
+
 --======================================================================
--- Input handling
+-- State
+--======================================================================
+local S = {
+    cfg = {
+        timeLimit = DEFAULTS.timeLimit,
+        wordCount = DEFAULTS.wordCount,
+        mode      = DEFAULTS.mode,
+    },
+
+    -- runtime
     active              = false,
     startSec            = 0,        -- absolute start (seconds)
     elapsedSeconds      = 0,        -- whole seconds elapsed (timer ticks)
@@ -108,9 +127,7 @@ end
     errorAtIndex        = {},       -- absolute char index => true
     totalTyped          = 0,        -- absolute chars typed
     totalErrors         = 0,        -- total mistakes
-    history             = {},       -- record of {time, wpm, acc}
 }
-local CURSOR = nil
 
 --======================================================================
 -- Rendering helpers
@@ -183,7 +200,6 @@ local function resetRuntime()
     S.fullText       = ""
     S.linesRaw       = {}
     S.errorAtIndex   = {}
-    S.history       = {}
 end
 
 local function buildLinesFromText(text)
@@ -236,12 +252,6 @@ local function renderProgress()
         end
         charOffset = charOffset + #raw
     end
-    -- move blinking cursor to current end
-    if CURSOR then
-        CURSOR.opacity = 1
-        local last = E.testWords.children[#E.testWords.children]
-        if last then last:append(CURSOR) end
-    end
 end
 
 local function renderComplete()
@@ -271,7 +281,6 @@ local function updateStats(nowElapsedOpt)
     local acc = calcAccuracy(S.totalTyped, S.totalErrors)
     if E.wpm      then E.wpm.text      = wpm end
     if E.accuracy then E.accuracy.text = acc .. "%" end
-    return wpm, acc
 end
 
 --======================================================================
@@ -352,8 +361,7 @@ local function startTimer(seconds)
         secondsLeft = secondsLeft - 1
 
         if E.timer then E.timer.text = string.format("%d", math.max(0, secondsLeft)) end
-        local wpm, acc = updateStats()
-        table.insert(S.history, {time = S.elapsedSeconds, wpm = wpm, acc = acc})
+        updateStats()
 
         if secondsLeft < 0 then
             stopTimer()
@@ -373,6 +381,7 @@ end
 local function setHudDefaults()
     if E.wpm      then E.wpm.text      = 0 end
     if E.accuracy then E.accuracy.text = "100%" end
+    E.restartBtn.visible = false
 end
 
 local function startTest()
@@ -387,6 +396,7 @@ local function startTest()
 
     setHudDefaults()
 
+    E.restartBtn.visible = true
     S.fullText = generateText(S.cfg.mode, S.cfg.wordCount)
     buildLinesFromText(S.fullText)
     renderLinesInitial()
@@ -398,12 +408,11 @@ end
 
 local function endTest(message)
     S.active = false
+    E.restartBtn.visible = false
     stopTimer()
 
     renderComplete()
-    local finalWpm, finalAcc = updateStats(S.elapsedSeconds)
-    -- draw stats graph
-    drawGraph()
+    updateStats(S.elapsedSeconds)
 
     if message then
         clearTextArea()
@@ -416,49 +425,9 @@ local function endTest(message)
         }))
     end
 
-    dbg("TEST END: total=%d errors=%d elapsed=%d", S.totalTyped, S.totalErrors, S.elapsedSeconds)
+    dbg("TEST END: total=%d errors=%d elapsed=%d",
+        S.totalTyped, S.totalErrors, S.elapsedSeconds)
 end
-
--- Graph rendering after test
-local function drawGraph()
-    -- setup canvas
-    local canvas = gurt.select('#stats-canvas')
-    if not canvas then
-        canvas = gurt.create('canvas', {id = 'stats-canvas', width = 600, height = 200})
-        if E.testWords and E.testWords.parent then
-            E.testWords.parent:append(canvas)
-        end
-    end
-    local ctx = canvas:withContext('2d')
-    -- clear canvas
-    ctx:clearRect(0, 0, canvas.width, canvas.height)
-    -- find max wpm
-    local maxWpm = 0
-    for _,pt in ipairs(S.history) do if pt.wpm > maxWpm then maxWpm = pt.wpm end end
-    if maxWpm == 0 then maxWpm = 1 end
-    -- draw WPM (blue)
-    ctx:setStrokeStyle('#0000ff')
-    ctx:setLineWidth(2)
-    ctx:beginPath()
-    for i,pt in ipairs(S.history) do
-        local x = (i-1) * (canvas.width / (#S.history -1))
-        local y = canvas.height - (pt.wpm / maxWpm) * canvas.height
-        if i == 1 then ctx:moveTo(x, y) else ctx:lineTo(x, y) end
-    end
-    ctx:stroke()
-    -- draw Accuracy (red)
-    ctx:setStrokeStyle('#ff0000')
-    ctx:setLineWidth(2)
-    ctx:beginPath()
-    for i,pt in ipairs(S.history) do
-        local x = (i-1) * (canvas.width / (#S.history -1))
-        local y = canvas.height - (pt.acc / 100) * canvas.height
-        if i == 1 then ctx:moveTo(x, y) else ctx:lineTo(x, y) end
-    end
-    ctx:stroke()
-end
-
--- Boot block removed; functions are invoked later after definitions
 
 --======================================================================
 -- Input handling
@@ -473,33 +442,39 @@ gurt.body:on('keydown', function(event)
 
     -- Escape: cancel / end
     if key == "Escape" then
-        endTest("Test Ended. Press Tab to start a new test.")
+        endTest("Test Ended. Press any key to start a new test.")
         return
     end
 
     -- Tab: start
     if key == "Tab" then
+        event.preventDefault()
         startTest()
         return
     end
 
     -- Handle backspace: allow deleting last character when active
     if key == "Backspace" and S.active and S.totalTyped > 0 then
+        event.preventDefault()
+        -- remove last char
         local idx = S.totalTyped
         if S.errorAtIndex[idx] then
             S.totalErrors = S.totalErrors - 1
             S.errorAtIndex[idx] = nil
         end
         S.totalTyped = idx - 1
+        -- update display and stats
         renderProgress()
         updateStats()
         return
     end
-    -- Only accept single-character input (letters, digits, space) during an active test
-    if not S.active then return end
-    if type(key) ~= 'string' then return end
-    if #key > 1 and key ~= ' ' then return end
-    -- key is now either single char or space
+    -- Auto-start on first non-control key
+    if not S.active then
+        startTest()
+    end
+
+    -- Ignore other control keys for typing progress
+    if IGNORE_KEYS[key] then return end
 
     playKey("hard-key")
 
@@ -637,82 +612,44 @@ E.typeNumbers:on('click', function()
     saveConfig()
 end)
 
- -- Removed restart button binding to enforce Tab-only start
 -- Restart button
--- if E.restartBtn then
---     E.restartBtn:on('click', startTest)
--- end
-
- -- apply saved configuration and defaults
- loadConfig()
- applyActiveClassesFromConfig()
- setHudDefaults()
- -- Ready. Press Tab to start.
+if E.restartBtn then
+    E.restartBtn:on('click', startTest)
+end
 
 --======================================================================
--- Input handling
+-- Boot
 --======================================================================
-local IGNORE_KEYS = {
-    Enter = true, Shift = true,
-    Control   = true, Alt    = true, Meta  = true,
-}
-
-gurt.body:on('keydown', function(event)
-    local key = event.key
-
-    -- Escape: cancel / end
-    if key == "Escape" then
-        endTest("Test Ended. Press Tab to start a new test.")
-        return
+local function applyActiveClassesFromConfig()
+    -- time
+    if S.cfg.timeLimit == 30 then
+        E.time30.classList:add('active')
+    elseif S.cfg.timeLimit == 60 then
+        E.time60.classList:add('active')
+    elseif S.cfg.timeLimit == 120 then
+        E.time120.classList:add('active')
     end
 
-    -- Tab: start
-    if key == "Tab" then
-        startTest()
-        return
+    -- words
+    if S.cfg.wordCount == 30 then
+        E.word30.classList:add('active')
+    elseif S.cfg.wordCount == 60 then
+        E.word60.classList:add('active')
+    elseif S.cfg.wordCount == 0 then
+        E.wordInf.classList:add('active')
     end
 
-    -- Handle backspace: allow deleting last character when active
-    if key == "Backspace" and S.active and S.totalTyped > 0 then
-        local idx = S.totalTyped
-        if S.errorAtIndex[idx] then
-            S.totalErrors = S.totalErrors - 1
-            S.errorAtIndex[idx] = nil
-        end
-        S.totalTyped = idx - 1
-        renderProgress()
-        updateStats()
-        return
+    -- mode
+    if S.cfg.mode == "words" then
+        E.typeWords.classList:add('active')
+    elseif S.cfg.mode == "quotes" then
+        E.typeQuotes.classList:add('active')
+    elseif S.cfg.mode == "numbers" then
+        E.typeNumbers.classList:add('active')
     end
-    -- Only process letter and space keys when test is active
-    if not S.active then return end
-    local isLetterOrSpace = type(key) == "string" and 
-        (key:match('^[A-Za-z0-9]$') or key == ' ' or key == 'Spacebar')
-    if not isLetterOrSpace then return end
+end
 
-    playKey("hard-key")
-
-    -- Expected vs typed (case-insensitive)
-    local expectedChar = S.fullText:sub(S.totalTyped + 1, S.totalTyped + 1)
-    local typedLower   = string.lower(tostring(key or ""))
-    local expectedLower= string.lower(expectedChar)
-
-    if typedLower ~= expectedLower then
-        S.totalErrors = S.totalErrors + 1
-        S.errorAtIndex[S.totalTyped + 1] = true
-    end
-    S.totalTyped = S.totalTyped + 1
-
-    -- Update progress coloring
-    renderProgress()
-
-    -- Complete
-    if S.totalTyped >= #S.fullText then
-        endTest()
-        return
-    end
-
-    -- Live stats (prefer timer-based elapsed)
-    local elapsedPref = (S.elapsedSeconds > 0) and S.elapsedSeconds or math.max(0.25, nowSeconds() - S.startSec)
-    updateStats(elapsedPref)
-end)
+loadConfig()
+applyActiveClassesFromConfig()
+setHudDefaults()
+-- Ready. Press Tab or any non-control key to start.
