@@ -1,0 +1,1 @@
+gurty serve --config config/gurty.toml --dir public --port 8080

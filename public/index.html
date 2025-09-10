@@ -1,0 +1,105 @@
+<head>
+	<title>type.shit</title>
+	<icon src="https://cdn-icons-png.flaticon.com/512/2991/2991148.png">
+	<meta name="theme-color" content="#323437">
+	<meta name="description" content="A minimalist typing test - type.shit">
+	
+	<font name="roboto" src="https://fonts.gstatic.com/s/roboto/v48/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3KUBGEe.woff2" />
+	
+	<style>
+		body { bg-[#323437] text-[#d1d0c5] font-roboto text-base min-h-screen flex flex-col items-center justify-center p-4 }
+		.header { text-[#3b82f6] text-4xl font-bold text-center mb-8 }
+		.config-section { flex flex-row gap-6 mb-8 flex-wrap justify-center }
+		.config-group { flex flex-col gap-2 items-center }
+		.config-label { text-[#646669] text-sm font-bold }
+		.config-options { flex flex-row gap-2 }
+		.config-btn { bg-[#2c2e31] text-[#646669] px-3 py-1 rounded cursor-pointer hover:bg-[#3c4043] hover:text-[#d1d0c5] }
+		.active { bg-[#4f5257] text-[#ffffff] }
+		.test-area { bg-[#2c2e31] rounded-lg p-8 mb-6 mx-auto }
+		.text-display { text-xl line-height-relaxed mb-6 min-h-24text-center }
+		.word { display-inline-block margin-right-2 }
+		.char.incorrect { text-[#ca4754] bg-[#7e2a33] }
+		.char.current { border-l-2 border-[#3b82f6] }
+		.stats { flex flex-row gap-8 justify-center text-center mb-6 w-full }
+		.stat { flex flex-col gap-1 }
+		.stat-value { text-[#3b82f6] text-3xl font-bold }
+		.stat-label { text-[#646669] text-sm }
+		.restart-btn { bg-[#3b82f6] text-[#ffffff] px-6 py-3 font-roboto rounded font-bold cursor-pointer hover:bg-[#2563eb] mx-auto block }
+		.results-overlay { position-fixed top-0 left-0 w-full h-full bg-[#00000080] flex items-center justify-center }
+		.results-modal { bg-[#2c2e31] rounded-lg p-8 text-center max-w-md w-full mx-4 }
+		.results-title { text-[#3b82f6] text-2xl font-bold mb-6 }
+		.results-stats { flex flex-col gap-4 mb-6 }
+		.results-stat { flex flex-row justify-between items-center }
+		.results-stat-label { text-[#646669] }
+		.results-stat-value { text-[#d1d0c5] font-bold }
+		.hidden { visible-false }
+	</style>
+	<script src="scripts/script.lua"></script>
+</head>
+
+<body>
+	<div style="header">
+		type.shit
+	</div>
+	
+	<!-- Configuration Section -->
+	<div style="config-section">
+		<div style="config-group">
+			<div style="config-label">time</div>
+			<div style="config-options">
+				<button id="time-30" style="config-btn">30</button>
+				<button id="time-60" style="config-btn">60</button>
+				<button id="time-120" style="config-btn">120</button>
+			</div>
+		</div>
+
+		<div style="config-group">
+			<div style="config-label">type</div>
+			<div style="config-options">
+				<button id="type-words" style="config-btn">Words</button>
+				<button id="type-quotes" style="config-btn">Quotes</button>
+				<button id="type-numbers" style="config-btn">Numbers</button>
+			</div>
+		</div>
+
+		<div style="config-group">
+			<div style="config-label">words</div>
+			<div style="config-options">
+				<button id="words-30" style="config-btn">30</button>
+				<button id="words-60" style="config-btn">60</button>
+				<button id="words-inf" style="config-btn">infinite</button>
+			</div>
+		</div>
+	</div>
+	
+	<!-- Test Area -->
+	<div style="test-area">
+		<div id="test-words" style="text-display">
+			Press any key to start
+		</div>
+	</div>
+	
+	<!-- Stats Section -->
+	<div style="stats">
+		<div style="stat">
+			<div id="wpm-value" style="stat-value">0</div>
+			<div style="stat-label">wpm</div>
+		</div>
+		
+		<div style="stat">
+			<div id="accuracy-value" style="stat-value">100%</div>
+			<div style="stat-label">accuracy</div>
+		</div>
+		
+		<div style="stat">
+			<div id="time-value" style="stat-value">30</div>
+			<div style="stat-label">time</div>
+		</div>
+	</div>
+	
+	<!-- Restart Button -->
+	<button id="restart-btn" style="restart-btn">
+		Restart Test (Tab)
+	</button>
+</body>
+</html>
