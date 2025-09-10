@@ -16,6 +16,7 @@ local DEFAULTS = {
 }
 
 local WORDS_PER_LINE = 10
+local INFINITE_LINES = 3     -- Number of lines to keep visible for infinite mode
 
 -- Colors (BBCode-like tinting for your renderer)
 local COLORS = {
@@ -127,6 +128,7 @@ local S = {
     errorAtIndex        = {},       -- absolute char index => true
     totalTyped          = 0,        -- absolute chars typed
     totalErrors         = 0,        -- total mistakes
+    shiftedChars        = 0,        -- characters shifted out in infinite mode
 }
 
 --======================================================================
@@ -200,53 +202,95 @@ local function resetRuntime()
     S.fullText       = ""
     S.linesRaw       = {}
     S.errorAtIndex   = {}
+    S.shiftedChars   = 0
 end
 
-local function buildLinesFromText(text)
-    S.linesRaw = {}
-
-    -- chunk by words into lines; preserves spaces between words and trailing
-    local words = {}
-    for w in text:gmatch("%S+") do table.insert(words, w) end
-
-    if #words == 0 then
-        S.linesRaw[1] = text
-        return
+local function generateMoreContent()
+    if S.cfg.mode == "numbers" then
+        return generateNumbers(WORDS_PER_LINE)  -- Maintain line length consistency
+    else
+        return generateWords(WORDS_PER_LINE)    -- Exactly one line worth of words
     end
+end
 
-    local line, lineIdx = {}, 1
-    for i, w in ipairs(words) do
-        table.insert(line, w)
-        local endOfLine = (#line == WORDS_PER_LINE) or (i == #words)
-        if endOfLine then
-            local base = table.concat(line, " ")
-            local raw = (i == #words) and base or (base .. " ")
-            S.linesRaw[lineIdx] = raw
-            line, lineIdx = {}, lineIdx + 1
+local function buildLinesFromText(text, isInfinite)
+    S.linesRaw = {}
+    
+    if isInfinite then
+        -- For infinite mode, we'll generate lines as needed
+        if S.cfg.mode == "numbers" then
+            -- For numbers, generate a long string of digits
+            local numbers = generateNumbers(100)  -- Generate 100 digits initially
+            text = numbers
+        else
+            -- For words/quotes, use the provided text or generate more
+            if not text or text == "" then
+                text = generateText(S.cfg.mode, 30)  -- Initial text
+            end
+        end
+        
+        -- Split into words for proper line breaking
+        local words = {}
+        for w in text:gmatch("%S+") do 
+            table.insert(words, w) 
+        end
+        
+        -- Build initial lines
+        local line, lineIdx = {}, 1
+        for i, w in ipairs(words) do
+            table.insert(line, w)
+            if #line == WORDS_PER_LINE or i == #words then
+                S.linesRaw[lineIdx] = table.concat(line, " ") .. (i ~= #words and " " or "")
+                line, lineIdx = {}, lineIdx + 1
+                if lineIdx > INFINITE_LINES then break end
+            end
+        end
+    else
+        -- Original logic for finite mode
+        local words = {}
+        for w in text:gmatch("%S+") do table.insert(words, w) end
+
+        if #words == 0 then
+            S.linesRaw[1] = text
+            return
+        end
+
+        local line, lineIdx = {}, 1
+        for i, w in ipairs(words) do
+            table.insert(line, w)
+            local endOfLine = (#line == WORDS_PER_LINE) or (i == #words)
+            if endOfLine then
+                local base = table.concat(line, " ")
+                local raw = (i == #words) and base or (base .. " ")
+                S.linesRaw[lineIdx] = raw
+                line, lineIdx = {}, lineIdx + 1
+            end
         end
     end
 end
 
 local function renderLinesInitial()
     clearTextArea()
+    local charOffset = S.shiftedChars
     for i = 1, #S.linesRaw do
         local raw = S.linesRaw[i]
         E.testWords:append(gurt.create('span', {
             className = "word",
             id        = 'line-' .. i,
             style     = ".word",
-            text      = colorizeText(raw, 0),
+            text      = colorizeLine(raw, 0, charOffset + 1, S.errorAtIndex),
             rawText   = raw,
         }))
+        charOffset = charOffset + #raw
     end
 end
 
 local function renderProgress()
-    local charOffset = 0
+    local charOffset = S.shiftedChars
     for i = 1, #E.testWords.children do
         local lineDiv = E.testWords.children[i]
         local raw = S.linesRaw[i] or (lineDiv and lineDiv.rawText) or ""
-        local charsOnLine = math.min(#raw, S.totalTyped - charOffset)
+        local charsOnLine = math.min(#raw, S.totalTyped - charOffset + S.shiftedChars)
         if charsOnLine > 0 then
             lineDiv.text = colorizeLine(raw, charsOnLine, charOffset + 1, S.errorAtIndex)
         end
@@ -255,12 +299,40 @@ local function renderProgress()
 end
 
 local function renderComplete()
-    local charOffset = 0
+    local charOffset = S.shiftedChars
     for i = 1, #E.testWords.children do
         local raw = S.linesRaw[i] or ""
         E.testWords.children[i].text = colorizeLine(raw, #raw, charOffset + 1, S.errorAtIndex)
         charOffset = charOffset + #raw
     end
+end
+
+-- New helper: shift the first line out and append a newly generated line (infinite mode)
+local function shiftFirstLine()
+    -- Ensure we are in infinite mode and have at least one line
+    if S.cfg.wordCount ~= 0 or #S.linesRaw == 0 then return end
+
+    local firstLen = #S.linesRaw[1]
+    -- Remove first raw line and append a new one
+    table.remove(S.linesRaw, 1)
+    table.insert(S.linesRaw, generateMoreContent())
+
+    -- Re-map error indices to account for the removed characters
+    local remappedErrors = {}
+    for idx, _ in pairs(S.errorAtIndex) do
+        if idx > firstLen then
+            remappedErrors[idx - firstLen] = true
+        end
+    end
+    S.errorAtIndex = remappedErrors
+
+    -- Update counters
+    S.totalTyped  = math.max(0, S.totalTyped - firstLen)
+    S.shiftedChars = S.shiftedChars + firstLen
+
+    -- Re-render display
+    renderLinesInitial()
+    renderProgress()
 end
 
 --======================================================================
@@ -289,7 +361,7 @@ end
 local function playKey(kind)
     if kind ~= "hard-key" and kind ~= "soft-key" then return end
     gurt.create('audio', {
-        src      = 'assets/' .. kind .. '.wav',
+        src      = 'https://github.com/officialmelon/type.shit/blob/master/assets/' .. kind .. '.wav?raw=true',
         autoplay = true,
         volume   = 0.5,
         loop     = false,
@@ -397,8 +469,18 @@ local function startTest()
     setHudDefaults()
 
     E.restartBtn.visible = true
-    S.fullText = generateText(S.cfg.mode, S.cfg.wordCount)
-    buildLinesFromText(S.fullText)
+    
+    -- Handle infinite vs finite mode
+    if S.cfg.wordCount == 0 then
+        -- Infinite mode - we'll generate content as we go
+        S.fullText = ""  -- No full text for infinite mode
+        buildLinesFromText("", true)  -- Start with empty text, will generate initial content
+    else
+        -- Finite mode - original logic
+        S.fullText = generateText(S.cfg.mode, S.cfg.wordCount)
+        buildLinesFromText(S.fullText, false)
+    end
+    
     renderLinesInitial()
     startTimer(S.cfg.timeLimit)
 
@@ -448,19 +530,17 @@ gurt.body:on('keydown', function(event)
 
     -- Tab: start
     if key == "Tab" then
-        event.preventDefault()
         startTest()
         return
     end
 
     -- Handle backspace: allow deleting last character when active
     if key == "Backspace" and S.active and S.totalTyped > 0 then
-        event.preventDefault()
         -- remove last char
         local idx = S.totalTyped
-        if S.errorAtIndex[idx] then
+        if S.errorAtIndex[idx + S.shiftedChars] then
             S.totalErrors = S.totalErrors - 1
-            S.errorAtIndex[idx] = nil
+            S.errorAtIndex[idx + S.shiftedChars] = nil
         end
         S.totalTyped = idx - 1
         -- update display and stats
@@ -468,32 +548,48 @@ gurt.body:on('keydown', function(event)
         updateStats()
         return
     end
+    
     -- Auto-start on first non-control key
     if not S.active then
         startTest()
     end
 
-    -- Ignore other control keys for typing progress
+    -- Restrict accepted characters to [0-9A-Za-z]
+    if not key:match("^[A-Za-z0-9]$") then
+        if IGNORE_KEYS[key] then return end -- ignore harmless control keys
+        return -- block anything else
+    end
     if IGNORE_KEYS[key] then return end
 
     playKey("hard-key")
 
+    -- For infinite mode, check if we need to generate more content
+    if S.cfg.wordCount == 0 and S.active then
+        local currentText = table.concat(S.linesRaw)
+        
+        -- If we're at the end of the current text, generate more content
+        if S.totalTyped >= #currentText - 3 then
+            shiftFirstLine()
+        end
+    end
+
     -- Expected vs typed (case-insensitive)
-    local expectedChar = S.fullText:sub(S.totalTyped + 1, S.totalTyped + 1)
+    local currentText = S.cfg.wordCount == 0 and table.concat(S.linesRaw) or S.fullText
+    local expectedChar = currentText:sub(S.totalTyped + 1, S.totalTyped + 1)
     local typedLower   = string.lower(tostring(key or ""))
     local expectedLower= string.lower(expectedChar)
 
     if typedLower ~= expectedLower then
         S.totalErrors = S.totalErrors + 1
-        S.errorAtIndex[S.totalTyped + 1] = true
+        S.errorAtIndex[S.totalTyped + S.shiftedChars] = true
     end
     S.totalTyped = S.totalTyped + 1
 
     -- Update progress coloring
     renderProgress()
 
-    -- Complete
-    if S.totalTyped >= #S.fullText then
+    -- Complete (only for finite mode)
+    if S.cfg.wordCount > 0 and S.totalTyped >= #S.fullText then
         endTest()
         return
     end
@@ -532,6 +628,7 @@ end
 E.time30:on('click', function()
     if S.active then return end
     S.cfg.timeLimit = 30
+    E.timer.text = "30"
     E.time30.classList:add('active')
     E.time60.classList:remove('active')
     E.time120.classList:remove('active')
@@ -541,6 +638,7 @@ end)
 E.time60:on('click', function()
     if S.active then return end
     S.cfg.timeLimit = 60
+    E.timer.text = "60"
     E.time30.classList:remove('active')
     E.time60.classList:add('active')
     E.time120.classList:remove('active')
@@ -550,6 +648,7 @@ end)
 E.time120:on('click', function()
     if S.active then return end
     S.cfg.timeLimit = 120
+    E.timer.text = "120"
     E.time30.classList:remove('active')
     E.time60.classList:remove('active')
     E.time120.classList:add('active')
@@ -575,14 +674,14 @@ E.word60:on('click', function()
     saveConfig()
 end)
 
-E.wordInf:on('click', function()
-    if S.active then return end
-    S.cfg.wordCount = 0
-    E.word30.classList:remove('active')
-    E.word60.classList:remove('active')
-    E.wordInf.classList:add('active')
-    saveConfig()
-end)
+-- E.wordInf:on('click', function()
+--     if S.active then return end
+--     S.cfg.wordCount = 0
+--     E.word30.classList:remove('active')
+--     E.word60.classList:remove('active')
+--     E.wordInf.classList:add('active')
+--     saveConfig()
+-- end)
 
 -- Mode buttons
 E.typeWords:on('click', function()
@@ -623,10 +722,13 @@ end
 local function applyActiveClassesFromConfig()
     -- time
     if S.cfg.timeLimit == 30 then
+        E.timer.text = "30"
         E.time30.classList:add('active')
     elseif S.cfg.timeLimit == 60 then
+        E.timer.text = "60"
         E.time60.classList:add('active')
     elseif S.cfg.timeLimit == 120 then
+        E.timer.text = "120"
         E.time120.classList:add('active')
     end
 
