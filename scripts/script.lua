@@ -9,9 +9,6 @@ local gurt, Time, setInterval, clearInterval, trace = gurt, Time, setInterval, c
 --======================================================================
 -- Config / Constants
 --======================================================================
-
--- forward-declare helpers used before their implementation
-local skipSpaces
 local DEBUG = false
 
 local DEFAULTS = {
@@ -49,6 +46,9 @@ local DATA = {
     }
 }
 
+--======================================================================
+-- Utils
+--======================================================================
 local function dbg(fmt, ...)
     if not DEBUG then return end
     local ok, msg = pcall(string.format, fmt, ...)
@@ -72,6 +72,7 @@ end
 
 local function safeToOneLine(s)
     if not s then return "<nil>" end
+    return tostring(s):gsub("\n", "\\n"):gsub("\t", "\\t"):gsub(" ", "·")
 end
 
 local function safeClearInterval(id)
@@ -92,6 +93,7 @@ local E = {
     timer           = gurt.select('#time-value'),
 
     -- time buttons
+    time30          = gurt.select('#time-30'),
     time60          = gurt.select('#time-60'),
     time120         = gurt.select('#time-120'),
 
@@ -168,6 +170,8 @@ local function colorizeLine(rawText, typedCount, startAbsIndex, errors)
     local parts, currentColor, buffer = {}, nil, {}
     local function flush()
         if currentColor and #buffer > 0 then
+            table.insert(parts, tint(table.concat(buffer), currentColor))
+            buffer = {}
         end
     end
 
@@ -178,6 +182,7 @@ local function colorizeLine(rawText, typedCount, startAbsIndex, errors)
         local ch = rawText:sub(i, i)
         local color
         if absIndex == globalNextAbs then
+            -- blinking highlight for the upcoming character at this absolute index
             if S.blinkOn then
                 color = COLORS.PROGRESS
                 -- show placeholder for space when blinking
@@ -227,7 +232,25 @@ local function resetRuntime()
 end
 
 -- Advance the typed pointer over any spaces so spaces don't require typing
--- (moved below updateStats for cleaner ordering)
+local function skipSpaces()
+    local currentText = S.cfg.wordCount == 0 and table.concat(S.linesRaw) or S.fullText
+    if not currentText or #currentText == 0 then return end
+    local moved = false
+    while true do
+        local nextChar = currentText:sub(S.totalTyped + 1, S.totalTyped + 1)
+        if nextChar == "" or nextChar == nil then break end
+        if nextChar == " " then
+            S.totalTyped = S.totalTyped + 1
+            moved = true
+        else
+            break
+        end
+    end
+    if moved then
+        renderProgress()
+        updateStats()
+    end
+end
 -- forward declarations for generators to resolve use-before-definition in infinite mode
 local generateText, generateNumbers, generateWords, getRandomWord
 
