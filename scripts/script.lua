@@ -3,11 +3,16 @@
 --======================================================================
 -- Environment glue
 print = trace.log
+-- declare environment globals for lint
+local gurt, Time, setInterval, clearInterval, trace = gurt, Time, setInterval, clearInterval, trace
 
 --======================================================================
 -- Config / Constants
 --======================================================================
-local DEBUG = true
+
+-- forward-declare helpers used before their implementation
+local skipSpaces
+local DEBUG = false
 
 local DEFAULTS = {
     timeLimit = 30,          -- seconds
@@ -20,6 +25,7 @@ local INFINITE_LINES = 3     -- Number of lines to keep visible for infinite mod
 
 -- Colors (BBCode-like tinting for your renderer)
 local COLORS = {
+    PROGRESS   = "#4287f5",
     TYPED      = "#C8E0F7",
     INCORRECT  = "#F54927",
     REMAINING  = "#707d89ff",
@@ -43,9 +49,6 @@ local DATA = {
     }
 }
 
---======================================================================
--- Utils
---======================================================================
 local function dbg(fmt, ...)
     if not DEBUG then return end
     local ok, msg = pcall(string.format, fmt, ...)
@@ -69,7 +72,6 @@ end
 
 local function safeToOneLine(s)
     if not s then return "<nil>" end
-    return tostring(s):gsub("\n", "\\n"):gsub("\t", "\\t"):gsub(" ", "·")
 end
 
 local function safeClearInterval(id)
@@ -90,7 +92,6 @@ local E = {
     timer           = gurt.select('#time-value'),
 
     -- time buttons
-    time30          = gurt.select('#time-30'),
     time60          = gurt.select('#time-60'),
     time120         = gurt.select('#time-120'),
 
@@ -104,6 +105,14 @@ local E = {
     word60          = gurt.select('#words-60'),
     wordInf         = gurt.select('#words-inf'),
 }
+
+function elementCleanLoad(element, tweenTime)
+	setTimeout(function()
+		element:createTween():to('opacity', 0):duration(0):play()
+		Time.sleep(0.01)
+		element:createTween():to('opacity', 1):duration(tweenTime):play()
+	end, 0)
+end
 
 --======================================================================
 -- State
@@ -129,6 +138,8 @@ local S = {
     totalTyped          = 0,        -- absolute chars typed
     totalErrors         = 0,        -- total mistakes
     shiftedChars        = 0,        -- characters shifted out in infinite mode
+    blinkOn             = false,    -- toggle for blinking highlight
+    blinkIntervalId     = nil,      -- interval ID for blink toggling
 }
 
 --======================================================================
@@ -157,18 +168,28 @@ local function colorizeLine(rawText, typedCount, startAbsIndex, errors)
     local parts, currentColor, buffer = {}, nil, {}
     local function flush()
         if currentColor and #buffer > 0 then
-            table.insert(parts, tint(table.concat(buffer), currentColor))
-            buffer = {}
         end
     end
 
+    -- flash the single absolute next character (so only caret blinks)
+    local globalNextAbs = S.totalTyped + S.shiftedChars + 1
     for i = 1, len do
         local absIndex = startAbsIndex + i - 1
         local ch = rawText:sub(i, i)
         local color
-        if i <= typedCount then
+        if absIndex == globalNextAbs then
+            if S.blinkOn then
+                color = COLORS.PROGRESS
+                -- show placeholder for space when blinking
+                if ch == " " then ch = "▯" end
+            else
+                color = COLORS.REMAINING
+            end
+        elseif i <= typedCount then
+            -- already typed chars
             color = errors[absIndex] and COLORS.INCORRECT or COLORS.TYPED
         else
+            -- remaining untyped chars
             color = COLORS.REMAINING
         end
 
@@ -204,6 +225,11 @@ local function resetRuntime()
     S.errorAtIndex   = {}
     S.shiftedChars   = 0
 end
+
+-- Advance the typed pointer over any spaces so spaces don't require typing
+-- (moved below updateStats for cleaner ordering)
+-- forward declarations for generators to resolve use-before-definition in infinite mode
+local generateText, generateNumbers, generateWords, getRandomWord
 
 local function generateMoreContent()
     if S.cfg.mode == "numbers" then
@@ -290,10 +316,11 @@ local function renderProgress()
     for i = 1, #E.testWords.children do
         local lineDiv = E.testWords.children[i]
         local raw = S.linesRaw[i] or (lineDiv and lineDiv.rawText) or ""
-        local charsOnLine = math.min(#raw, S.totalTyped - charOffset + S.shiftedChars)
-        if charsOnLine > 0 then
-            lineDiv.text = colorizeLine(raw, charsOnLine, charOffset + 1, S.errorAtIndex)
-        end
+        -- calculate how many characters of this line have been typed
+        local typedOnLine = S.totalTyped - charOffset
+        local charsOnLine = math.min(#raw, math.max(0, typedOnLine))
+        -- always update the line text (colorizeLine handles typedCount == 0)
+        lineDiv.text = colorizeLine(raw, charsOnLine, charOffset + 1, S.errorAtIndex)
         charOffset = charOffset + #raw
     end
 end
@@ -372,24 +399,24 @@ end
 --======================================================================
 -- Generators
 --======================================================================
-local function getRandomWord()
+getRandomWord = function()
     local words = DATA.Words
     return string.lower(words[math.random(1, #words)])
 end
 
-local function generateNumbers(count)
+generateNumbers = function(count)
     local out = {}
     for i = 1, count do out[i] = tostring(math.random(0, 9)) end
     return table.concat(out)
 end
 
-local function generateWords(count)
+generateWords = function(count)
     local out = {}
     for i = 1, count do out[i] = getRandomWord() end
     return table.concat(out, " ")
 end
 
-local function generateText(mode, wordCount)
+generateText = function(mode, wordCount)
     if mode == "quotes" then
         return DATA.Quotes[math.random(1, #DATA.Quotes)]
     elseif mode == "numbers" then
@@ -464,11 +491,19 @@ local function startTest()
     clearTextArea()
 
     S.active   = true
+    -- initialize blinking highlight
+    if S.blinkIntervalId then clearInterval(S.blinkIntervalId) end
+    S.blinkOn = false
+    S.blinkIntervalId = setInterval(function()
+        S.blinkOn = not S.blinkOn
+        renderProgress()
+    end, 500)
     S.startSec = nowSeconds()
 
     setHudDefaults()
 
     E.restartBtn.visible = true
+    elementCleanLoad(gurt.select('#time-counter'), 1)
     
     -- Handle infinite vs finite mode
     if S.cfg.wordCount == 0 then
@@ -490,7 +525,16 @@ end
 
 local function endTest(message)
     S.active = false
+    -- stop blinking highlight
+    if S.blinkIntervalId then clearInterval(S.blinkIntervalId) end
+    S.blinkIntervalId = nil
+    S.blinkOn = false
     E.restartBtn.visible = false
+
+    elementCleanLoad(gurt.select('#wpm-counter'), 1)
+    elementCleanLoad(gurt.select('#accuracy-counter'), 1)
+    elementCleanLoad(gurt.select('#restart-btn'), 1)
+
     stopTimer()
 
     renderComplete()
@@ -528,9 +572,9 @@ gurt.body:on('keydown', function(event)
         return
     end
 
-    -- Tab: start
+    -- Tab: start (only when not active)
     if key == "Tab" then
-        startTest()
+        if not S.active then startTest() end
         return
     end
 
@@ -538,40 +582,43 @@ gurt.body:on('keydown', function(event)
     if key == "Backspace" and S.active and S.totalTyped > 0 then
         -- remove last char
         local idx = S.totalTyped
-        if S.errorAtIndex[idx + S.shiftedChars] then
-            S.totalErrors = S.totalErrors - 1
-            S.errorAtIndex[idx + S.shiftedChars] = nil
+        -- Errors are stored as 1-based absolute indices; compute absolute idx
+        local absIdx = idx + S.shiftedChars
+        if S.errorAtIndex[absIdx + 1] then
+            S.totalErrors = math.max(0, S.totalErrors - 1)
+            S.errorAtIndex[absIdx + 1] = nil
         end
-        S.totalTyped = idx - 1
+        S.totalTyped = math.max(0, idx - 1)
         -- update display and stats
         renderProgress()
         updateStats()
         return
     end
     
-    -- Auto-start on first non-control key
+    -- Auto-start on first non-control key (ignore this keypress for typing)
     if not S.active then
         startTest()
+        return
     end
 
-    -- Restrict accepted characters to [0-9A-Za-z]
-    if not key:match("^[A-Za-z0-9]$") then
+    -- Restrict accepted characters to digits, letters, and space
+    if not key:match("^[A-Za-z0-9 ]$") then
         if IGNORE_KEYS[key] then return end -- ignore harmless control keys
         return -- block anything else
     end
+    -- treat space as valid input now
     if IGNORE_KEYS[key] then return end
+
+
+    -- If user pressed space, skip spaces automatically and don't count the keypress
+    if key == " " or key == "Space" then
+        skipSpaces()
+        return
+    end
 
     playKey("hard-key")
 
-    -- For infinite mode, check if we need to generate more content
-    if S.cfg.wordCount == 0 and S.active then
-        local currentText = table.concat(S.linesRaw)
-        
-        -- If we're at the end of the current text, generate more content
-        if S.totalTyped >= #currentText - 3 then
-            shiftFirstLine()
-        end
-    end
+    -- infinite mode shift is now handled after rendering progress
 
     -- Expected vs typed (case-insensitive)
     local currentText = S.cfg.wordCount == 0 and table.concat(S.linesRaw) or S.fullText
@@ -581,12 +628,23 @@ gurt.body:on('keydown', function(event)
 
     if typedLower ~= expectedLower then
         S.totalErrors = S.totalErrors + 1
-        S.errorAtIndex[S.totalTyped + S.shiftedChars] = true
+    -- store errors using 1-based absolute char indices (matches colorizeLine absIndex)
+    S.errorAtIndex[S.totalTyped + S.shiftedChars + 1] = true
     end
     S.totalTyped = S.totalTyped + 1
 
+    -- after typing a character, auto-skip any spaces that follow
+    skipSpaces()
+
     -- Update progress coloring
     renderProgress()
+    -- infinite mode: after rendering, shift buffer when first line is fully typed
+    if S.cfg.wordCount == 0 and S.active then
+        local firstLen = #S.linesRaw[1] or 0
+        if S.totalTyped >= firstLen then
+            shiftFirstLine()
+        end
+    end
 
     -- Complete (only for finite mode)
     if S.cfg.wordCount > 0 and S.totalTyped >= #S.fullText then
@@ -674,14 +732,14 @@ E.word60:on('click', function()
     saveConfig()
 end)
 
--- E.wordInf:on('click', function()
---     if S.active then return end
---     S.cfg.wordCount = 0
---     E.word30.classList:remove('active')
---     E.word60.classList:remove('active')
---     E.wordInf.classList:add('active')
---     saveConfig()
--- end)
+E.wordInf:on('click', function()
+    if S.active then return end
+    S.cfg.wordCount = 0
+    E.word30.classList:remove('active')
+    E.word60.classList:remove('active')
+    E.wordInf.classList:add('active')
+    saveConfig()
+end)
 
 -- Mode buttons
 E.typeWords:on('click', function()
@@ -751,23 +809,10 @@ local function applyActiveClassesFromConfig()
     end
 end
 
-function elementCleanLoad(element, tweenTime)
-	setTimeout(function()
-		element:createTween():to('opacity', 0):duration(0):play()
-		Time.sleep(0.01)
-		element:createTween():to('opacity', 1):duration(tweenTime):play()
-	end, 0)
-end
-
 -- Fade in load
 elementCleanLoad(gurt.select('#header'), 1)
-
 elementCleanLoad(gurt.select('#test-section'), 1)
 elementCleanLoad(gurt.select('#config-section'), 1)
-
-elementCleanLoad(gurt.select('#wpm-counter'), 1)
-elementCleanLoad(gurt.select('#accuracy-counter'), 1)
-elementCleanLoad(gurt.select('#time-counter'), 1)
 
 loadConfig()
 applyActiveClassesFromConfig()

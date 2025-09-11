@@ -7,31 +7,24 @@
 	<font name="roboto" src="https://fonts.gstatic.com/s/roboto/v48/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3KUBGEe.woff2" />
 	
 	<style>
-		body { bg-[#323437] text-[#d1d0c5] font-roboto text-base min-h-screen flex flex-col items-center justify-center p-4 }
-		.header { text-[#3b82f6] text-4xl font-bold text-center pb-8 }
-		.config-section { flex flex-row gap-6 flex-wrap justify-center pb-12 }
+		body { bg-[#323437] text-[#d1d0c5] font-roboto text-base min-h-screen flex flex-col p-4 justify-center items-center}
+		.header { text-[#3b82f6] text-4xl font-bold pb-8 mx-auto text-center w-full }
+		.config-section { flex flex-row gap-6 flex-wrap pb-12 justify-center w-full max-w-3xl }
 		.config-group { flex flex-col gap-2 items-center }
-		.config-label { text-[#646669] text-sm font-bold }
-		.config-options { flex flex-row gap-2 }
-		.config-btn { bg-[#2c2e31] text-[#646669] px-3 py-1 rounded cursor-pointer hover:bg-[#3c4043] hover:text-[#d1d0c5] }
+		.config-label { text-[#646669] text-sm font-bold text-center } 
+		.config-options { flex flex-row gap-2 justify-center }
+		.config-btn { bg-[#2c2e31] text-[#646669] px-3 py-1 rounded cursor-pointer mx-auto hover:bg-[#3c4043] hover:text-[#d1d0c5] }
 		.active { bg-[#4f5257] text-[#ffffff] }
-		.test-area { bg-[#2c2e31] rounded-lg p-8 mx-auto }
-		.text-display { text-xl line-height-relaxed mb-6 min-h-24text-center }
+		.test-area { bg-[#2c2e31] rounded-lg p-8 mx-auto max-w-3xl w-full text-center }
+		.text-display { text-xl line-height-relaxed mb-6 min-h-24 text-center }
 		.word { display-inline-block margin-right-2 }
 		.char.incorrect { text-[#ca4754] bg-[#7e2a33] }
 		.char.current { border-l-2 border-[#3b82f6] }
-		.stats { flex flex-row gap-8 justify-center text-center mb-6 w-full }
-		.stat { flex flex-col gap-1 }
+		.stats { flex flex-row gap-8 mb-6 w-full max-w-3xl mx-auto justify-center }
+		.stat { flex flex-col gap-1 mx-auto justify-center items-center }
 		.stat-value { text-[#3b82f6] text-3xl font-bold }
 		.stat-label { text-[#646669] text-sm }
-		.restart-btn { mx-auto block cursor-pointer }
-		.results-overlay { position-fixed top-0 left-0 w-full h-full bg-[#00000080] flex items-center justify-center }
-		.results-modal { bg-[#2c2e31] rounded-lg p-8 text-center max-w-md w-full mx-4 }
-		.results-title { text-[#3b82f6] text-2xl font-bold mb-6 }
-		.results-stats { flex flex-col gap-4 mb-6 }
-		.results-stat { flex flex-row justify-between items-center }
-		.results-stat-label { text-[#646669] }
-		.results-stat-value { text-[#d1d0c5] font-bold }
+		.restart-btn { cursor-pointer mx-auto }
 	</style>
 	<script src="scripts/script.lua"></script>
 </head>
@@ -82,19 +75,19 @@
 			<div style="stat-label">wpm</div>
 		</div>
 		
+		<div id="time-counter" style="stat opacity-[0]">
+			<div id="time-value" style="stat-value">30</div>
+			<div style="stat-label">secs</div>
+		</div>
+
 		<div id="accuracy-counter" style="stat opacity-[0]">
 			<div id="accuracy-value" style="stat-value">100%</div>
 			<div style="stat-label">accuracy</div>
 		</div>
-		
-		<div id="time-counter" style="stat opacity-[0]">
-			<div id="time-value" style="stat-value">30</div>
-			<div style="stat-label">time</div>
-		</div>
 	</div>
 	
 	<!-- Restart Button -->
-	<div id="restart-btn" style="restart-btn">
+	<div id="restart-btn" style="restart-btn opacity-[0]">
 		<img style="mx-auto block" src="https://github.com/officialmelon/type.shit/blob/master/assets/reset.png?raw=true" style="w-12 h-12"  /> 
 	</div>
 	<!-- Version 1.0 -->
