@@ -751,7 +751,24 @@ local function applyActiveClassesFromConfig()
     end
 end
 
+function elementCleanLoad(element, tweenTime)
+	setTimeout(function()
+		element:createTween():to('opacity', 0):duration(0):play()
+		Time.sleep(0.01)
+		element:createTween():to('opacity', 1):duration(tweenTime):play()
+	end, 0)
+end
+
+-- Fade in load
+elementCleanLoad(gurt.select('#header'), 1)
+
+elementCleanLoad(gurt.select('#test-section'), 1)
+elementCleanLoad(gurt.select('#config-section'), 1)
+
+elementCleanLoad(gurt.select('#wpm-counter'), 1)
+elementCleanLoad(gurt.select('#accuracy-counter'), 1)
+elementCleanLoad(gurt.select('#time-counter'), 1)
+
 loadConfig()
 applyActiveClassesFromConfig()
 setHudDefaults()
--- Ready. Press Tab or any non-control key to start.
