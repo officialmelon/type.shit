@@ -210,12 +210,30 @@ local function colorizeLine(rawText, typedCount, startAbsIndex, errors)
 end
 
 local function clearTextArea()
-    local el = E.testWords
-    if not el then return end
-    el.text = ""
-    for i = #el.children, 1, -1 do
-        local child = el.children[i]
-        if child and child.remove then child:remove() end
+    -- Fully replace the test-words container to drop all existing children
+    local oldContainer = E.testWords
+    if not oldContainer then return end
+    local parent = oldContainer.parent
+    if parent and parent.replace then
+        -- Create a fresh container with same attributes
+        local newContainer = gurt.create('div', {
+            id    = 'test-words',
+            style = oldContainer.style or '.text-display',
+            text  = ''
+        })
+        parent:replace(oldContainer, newContainer)
+        E.testWords = newContainer
+        print("[DEBUG] clearTextArea: replaced test-words container, children count: " .. #newContainer.children)
+    else
+        -- Fallback: clear text and remove remaining children
+        oldContainer.text = ''
+        local count = #oldContainer.children
+        print("[DEBUG] clearTextArea: fallback removing " .. count .. " children")
+        for i = count, 1, -1 do
+            local child = oldContainer.children[i]
+            if child and child.remove then child:remove() end
+        end
+        print("[DEBUG] clearTextArea: after fallback, children count: " .. #oldContainer.children)
     end
 end
 
@@ -232,98 +250,101 @@ local function resetRuntime()
 end
 
 -- Advance the typed pointer over any spaces so spaces don't require typing
-local function skipSpaces()
-    local currentText = S.cfg.wordCount == 0 and table.concat(S.linesRaw) or S.fullText
-    if not currentText or #currentText == 0 then return end
-    local moved = false
-    while true do
-        local nextChar = currentText:sub(S.totalTyped + 1, S.totalTyped + 1)
-        if nextChar == "" or nextChar == nil then break end
-        if nextChar == " " then
-            S.totalTyped = S.totalTyped + 1
-            moved = true
-        else
-            break
-        end
-    end
-    if moved then
-        renderProgress()
-        updateStats()
-    end
-end
+
 -- forward declarations for generators to resolve use-before-definition in infinite mode
 local generateText, generateNumbers, generateWords, getRandomWord
 
 local function generateMoreContent()
+    local line = {}
+    
     if S.cfg.mode == "numbers" then
-        return generateNumbers(WORDS_PER_LINE)  -- Maintain line length consistency
+        -- Generate exactly WORDS_PER_LINE digits
+        for i = 1, WORDS_PER_LINE do
+            table.insert(line, tostring(math.random(0, 9)))
+        end
     else
-        return generateWords(WORDS_PER_LINE)    -- Exactly one line worth of words
+        -- Generate exactly WORDS_PER_LINE words
+        for i = 1, WORDS_PER_LINE do
+            table.insert(line, getRandomWord())
+        end
     end
+    
+    return table.concat(line, " ")
 end
 
 local function buildLinesFromText(text, isInfinite)
     S.linesRaw = {}
     
-    if isInfinite then
-        -- For infinite mode, we'll generate lines as needed
-        if S.cfg.mode == "numbers" then
-            -- For numbers, generate a long string of digits
-            local numbers = generateNumbers(100)  -- Generate 100 digits initially
-            text = numbers
-        else
-            -- For words/quotes, use the provided text or generate more
-            if not text or text == "" then
-                text = generateText(S.cfg.mode, 30)  -- Initial text
-            end
-        end
-        
-        -- Split into words for proper line breaking
-        local words = {}
-        for w in text:gmatch("%S+") do 
-            table.insert(words, w) 
-        end
-        
-        -- Build initial lines
-        local line, lineIdx = {}, 1
-        for i, w in ipairs(words) do
-            table.insert(line, w)
-            if #line == WORDS_PER_LINE or i == #words then
-                S.linesRaw[lineIdx] = table.concat(line, " ") .. (i ~= #words and " " or "")
-                line, lineIdx = {}, lineIdx + 1
-                if lineIdx > INFINITE_LINES then break end
-            end
+    -- Generate source text based on mode
+    local sourceText = text
+    if not sourceText or sourceText == "" then
+        sourceText = generateText(S.cfg.mode, isInfinite and 50 or S.cfg.wordCount)
+    end
+    
+    -- For numbers mode, treat each digit as a separate "word"
+    local words = {}
+    if S.cfg.mode == "numbers" then
+        for digit in sourceText:gmatch("%d") do
+            table.insert(words, digit)
         end
     else
-        -- Original logic for finite mode
-        local words = {}
-        for w in text:gmatch("%S+") do table.insert(words, w) end
-
-        if #words == 0 then
-            S.linesRaw[1] = text
-            return
+        -- For words/quotes, split by whitespace
+        for w in sourceText:gmatch("%S+") do 
+            table.insert(words, w) 
         end
-
-        local line, lineIdx = {}, 1
-        for i, w in ipairs(words) do
-            table.insert(line, w)
-            local endOfLine = (#line == WORDS_PER_LINE) or (i == #words)
-            if endOfLine then
-                local base = table.concat(line, " ")
-                local raw = (i == #words) and base or (base .. " ")
-                S.linesRaw[lineIdx] = raw
-                line, lineIdx = {}, lineIdx + 1
+    end
+    
+    -- Build exactly 3 lines, no matter what
+    for lineIdx = 1, 3 do
+        local line = {}
+        local startWord = (lineIdx - 1) * WORDS_PER_LINE + 1
+        
+        for i = 1, WORDS_PER_LINE do
+            local wordIdx = startWord + i - 1
+            if wordIdx <= #words then
+                table.insert(line, words[wordIdx])
+            else
+                -- Generate more content if we run out
+                if S.cfg.mode == "numbers" then
+                    table.insert(line, tostring(math.random(0, 9)))
+                else
+                    table.insert(line, getRandomWord())
+                end
             end
         end
+        
+        -- Create line with proper spacing
+        S.linesRaw[lineIdx] = table.concat(line, " ") .. " "
+    end
+    
+    -- Ensure we have exactly 3 lines
+    while #S.linesRaw < 3 do
+        table.insert(S.linesRaw, generateMoreContent() .. " ")
+    end
+    while #S.linesRaw > 3 do
+        table.remove(S.linesRaw)
     end
 end
 
 local function renderLinesInitial()
     clearTextArea()
+
+    -- Debug: log children count after clearing
+    print(string.format("[DEBUG] renderLinesInitial: after clearTextArea, children count: %d", #E.testWords.children))
     local charOffset = S.shiftedChars
-    for i = 1, #S.linesRaw do
-        local raw = S.linesRaw[i]
-        E.testWords:append(gurt.create('span', {
+    
+    -- Always render exactly 3 lines
+    for i = 1, 3 do
+        local raw = S.linesRaw[i] or ""
+        if raw == "" then
+            -- Generate missing line content on the fly
+            raw = generateMoreContent() .. " "
+            S.linesRaw[i] = raw
+        end
+        
+    -- Debug: before appending line i
+    print(string.format("[DEBUG] renderLinesInitial: before append, children count: %d, appending line: %d", #E.testWords.children, i))
+    E.testWords:append(gurt.create('span', {
             className = "word",
             id        = 'line-' .. i,
             style     = ".word",
@@ -332,17 +353,30 @@ local function renderLinesInitial()
         }))
         charOffset = charOffset + #raw
     end
+    -- Debug: after appending lines, children count
+    print(string.format("[DEBUG] renderLinesInitial: after appending, children count: %d", #E.testWords.children))
 end
 
 local function renderProgress()
     local charOffset = S.shiftedChars
-    for i = 1, #E.testWords.children do
+    
+    -- Always update exactly 3 lines
+    for i = 1, 3 do
         local lineDiv = E.testWords.children[i]
-        local raw = S.linesRaw[i] or (lineDiv and lineDiv.rawText) or ""
-        -- calculate how many characters of this line have been typed
+        if not lineDiv then break end -- Safety check
+        
+        local raw = S.linesRaw[i] or ""
+        if raw == "" then
+            -- Generate missing line content on the fly
+            raw = generateMoreContent() .. " "
+            S.linesRaw[i] = raw
+        end
+        
+        -- Calculate how many characters of this line have been typed
         local typedOnLine = S.totalTyped - charOffset
         local charsOnLine = math.min(#raw, math.max(0, typedOnLine))
-        -- always update the line text (colorizeLine handles typedCount == 0)
+        
+        -- Always update the line text (colorizeLine handles typedCount == 0)
         lineDiv.text = colorizeLine(raw, charsOnLine, charOffset + 1, S.errorAtIndex)
         charOffset = charOffset + #raw
     end
@@ -350,22 +384,36 @@ end
 
 local function renderComplete()
     local charOffset = S.shiftedChars
-    for i = 1, #E.testWords.children do
+    
+    -- Always render exactly 3 lines
+    for i = 1, 3 do
+        local lineDiv = E.testWords.children[i]
+        if not lineDiv then break end -- Safety check
+        
         local raw = S.linesRaw[i] or ""
-        E.testWords.children[i].text = colorizeLine(raw, #raw, charOffset + 1, S.errorAtIndex)
+        lineDiv.text = colorizeLine(raw, #raw, charOffset + 1, S.errorAtIndex)
         charOffset = charOffset + #raw
     end
 end
 
--- New helper: shift the first line out and append a newly generated line (infinite mode)
+-- Clean helper: shift the first line out and append a newly generated line (infinite mode)
 local function shiftFirstLine()
-    -- Ensure we are in infinite mode and have at least one line
-    if S.cfg.wordCount ~= 0 or #S.linesRaw == 0 then return end
+    -- Ensure we are in infinite mode and have exactly 3 lines
+    if S.cfg.wordCount ~= 0 or #S.linesRaw ~= 3 then return end
 
     local firstLen = #S.linesRaw[1]
-    -- Remove first raw line and append a new one
+    
+    -- Remove first line and append a new one
     table.remove(S.linesRaw, 1)
-    table.insert(S.linesRaw, generateMoreContent())
+    table.insert(S.linesRaw, generateMoreContent() .. " ")
+    
+    -- Ensure we still have exactly 3 lines
+    while #S.linesRaw < 3 do
+        table.insert(S.linesRaw, generateMoreContent() .. " ")
+    end
+    while #S.linesRaw > 3 do
+        table.remove(S.linesRaw)
+    end
 
     -- Re-map error indices to account for the removed characters
     local remappedErrors = {}
@@ -377,7 +425,7 @@ local function shiftFirstLine()
     S.errorAtIndex = remappedErrors
 
     -- Update counters
-    S.totalTyped  = math.max(0, S.totalTyped - firstLen)
+    S.totalTyped = math.max(0, S.totalTyped - firstLen)
     S.shiftedChars = S.shiftedChars + firstLen
 
     -- Re-render display
@@ -512,7 +560,6 @@ local function startTest()
     stopTimer()
     resetRuntime()
     clearTextArea()
-
     S.active   = true
     -- initialize blinking highlight
     if S.blinkIntervalId then clearInterval(S.blinkIntervalId) end
@@ -527,7 +574,7 @@ local function startTest()
 
     E.restartBtn.visible = true
     elementCleanLoad(gurt.select('#time-counter'), 1)
-    
+    elementCleanLoad(gurt.select('#restart-btn'), 1)
     -- Handle infinite vs finite mode
     if S.cfg.wordCount == 0 then
         -- Infinite mode - we'll generate content as we go
@@ -556,7 +603,6 @@ local function endTest(message)
 
     elementCleanLoad(gurt.select('#wpm-counter'), 1)
     elementCleanLoad(gurt.select('#accuracy-counter'), 1)
-    elementCleanLoad(gurt.select('#restart-btn'), 1)
 
     stopTimer()
 
@@ -576,6 +622,26 @@ local function endTest(message)
 
     dbg("TEST END: total=%d errors=%d elapsed=%d",
         S.totalTyped, S.totalErrors, S.elapsedSeconds)
+end
+
+local function skipSpaces()
+    local currentText = S.cfg.wordCount == 0 and table.concat(S.linesRaw) or S.fullText
+    if not currentText or #currentText == 0 then return end
+    local moved = false
+    while true do
+        local nextChar = currentText:sub(S.totalTyped + 1, S.totalTyped + 1)
+        if nextChar == "" or nextChar == nil then break end
+        if nextChar == " " then
+            S.totalTyped = S.totalTyped + 1
+            moved = true
+        else
+            break
+        end
+    end
+    if moved then
+        renderProgress()
+        updateStats()
+    end
 end
 
 --======================================================================
@@ -757,7 +823,7 @@ end)
 
 E.wordInf:on('click', function()
     if S.active then return end
-    S.cfg.wordCount = 0
+    S.cfg.wordCount = 0  -- 0 means infinite mode
     E.word30.classList:remove('active')
     E.word60.classList:remove('active')
     E.wordInf.classList:add('active')
