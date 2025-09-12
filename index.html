@@ -24,7 +24,7 @@
 		.stat { flex flex-col gap-1 mx-auto justify-center items-center }
 		.stat-value { text-[#3b82f6] text-3xl font-bold }
 		.stat-label { text-[#646669] text-sm }
-		.restart-btn { cursor-pointer mx-auto }
+		.restart-btn { cursor-pointer mx-auto left-[10%] }
 	</style>
 	<script src="scripts/script.lua"></script>
 </head>
@@ -40,7 +40,6 @@
 			<div style="config-options">
 				<button id="time-30" style="config-btn">30</button>
 				<button id="time-60" style="config-btn">60</button>
-				<button id="time-120" style="config-btn">120</button>
 			</div>
 		</div>
 
@@ -48,7 +47,6 @@
 			<div style="config-label">type</div>
 			<div style="config-options">
 				<button id="type-words" style="config-btn">Words</button>
-				<button id="type-quotes" style="config-btn">Quotes</button>
 				<button id="type-numbers" style="config-btn">Numbers</button>
 			</div>
 		</div>
@@ -58,7 +56,6 @@
 			<div style="config-options">
 				<button id="words-30" style="config-btn">30</button>
 				<button id="words-60" style="config-btn">60</button>
-				<button id="words-inf" style="config-btn">infinite</button>
 			</div>
 		</div>
 	</div>
@@ -87,9 +84,12 @@
 	</div>
 	
 	<!-- Restart Button -->
-	<div id="restart-btn" style="restart-btn opacity-[0]">
+	<div id="restart-btn" style="mx-auto block opacity-[0]">
 		<img style="mx-auto block" src="https://github.com/officialmelon/type.shit/blob/master/assets/reset.png?raw=true" style="w-12 h-12"  /> 
 	</div>
+	<div id="created-by" style="mx-auto block absolute p-3 text-xs text-gray-400 italic opacity-[0]"> Created by melon </div>
+	<div id="hosted-on" style="mx-auto block absolute p-3 text-xs text-gray-400 italic opacity-[0]"> Hosted on Arsonflare </div>
+
 	<!-- Version 1.0 -->
 </body>
 </html>

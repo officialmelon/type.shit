@@ -95,17 +95,17 @@ local E = {
     -- time buttons
     time30          = gurt.select('#time-30'),
     time60          = gurt.select('#time-60'),
-    time120         = gurt.select('#time-120'),
+    -- time120         = gurt.select('#time-120'),
 
     -- mode switches
     typeWords       = gurt.select('#type-words'),
-    typeQuotes      = gurt.select('#type-quotes'),
+    --typeQuotes      = gurt.select('#type-quotes'),
     typeNumbers     = gurt.select('#type-numbers'),
 
     -- word count
     word30          = gurt.select('#words-30'),
     word60          = gurt.select('#words-60'),
-    wordInf         = gurt.select('#words-inf'),
+    -- wordInf         = gurt.select('#words-inf'),
 }
 
 function elementCleanLoad(element, tweenTime)
@@ -128,6 +128,8 @@ local S = {
 
     -- runtime
     active              = false,
+    testCompleted       = false,    -- true when test has finished, prevents auto-restart
+    timedOut            = false,    -- true when the timer expired (distinct from finishing)
     startSec            = 0,        -- absolute start (seconds)
     elapsedSeconds      = 0,        -- whole seconds elapsed (timer ticks)
     timerId             = nil,
@@ -143,6 +145,9 @@ local S = {
     blinkOn             = false,    -- toggle for blinking highlight
     blinkIntervalId     = nil,      -- interval ID for blink toggling
 }
+
+-- forward declaration so timer can call endTest before it's defined
+local endTest
 
 --======================================================================
 -- Rendering helpers
@@ -210,31 +215,22 @@ local function colorizeLine(rawText, typedCount, startAbsIndex, errors)
 end
 
 local function clearTextArea()
-    -- Fully replace the test-words container to drop all existing children
-    local oldContainer = E.testWords
-    if not oldContainer then return end
-    local parent = oldContainer.parent
-    if parent and parent.replace then
-        -- Create a fresh container with same attributes
-        local newContainer = gurt.create('div', {
-            id    = 'test-words',
-            style = oldContainer.style or '.text-display',
-            text  = ''
-        })
-        parent:replace(oldContainer, newContainer)
-        E.testWords = newContainer
-        print("[DEBUG] clearTextArea: replaced test-words container, children count: " .. #newContainer.children)
-    else
-        -- Fallback: clear text and remove remaining children
-        oldContainer.text = ''
-        local count = #oldContainer.children
-        print("[DEBUG] clearTextArea: fallback removing " .. count .. " children")
-        for i = count, 1, -1 do
-            local child = oldContainer.children[i]
-            if child and child.remove then child:remove() end
+    local el = E.testWords
+    if not el then return end
+    print(string.format("[DEBUG] clearTextArea: before removal, children count: %d", #el.children))
+    -- Clear text content and innerHTML if available
+    el.text = ""
+    if el.innerHTML ~= nil then el.innerHTML = "" end
+    -- Remove any remaining child nodes explicitly
+    while #el.children > 0 do
+        local child = el.children[1]
+        if child and child.remove then
+            child:remove()
+        else
+            break
         end
-        print("[DEBUG] clearTextArea: after fallback, children count: " .. #oldContainer.children)
     end
+    print(string.format("[DEBUG] clearTextArea: after removal, children count: %d", #el.children))
 end
 
 local function resetRuntime()
@@ -328,7 +324,6 @@ end
 
 local function renderLinesInitial()
     clearTextArea()
-
     -- Debug: log children count after clearing
     print(string.format("[DEBUG] renderLinesInitial: after clearTextArea, children count: %d", #E.testWords.children))
     local charOffset = S.shiftedChars
@@ -534,10 +529,11 @@ local function startTimer(seconds)
         updateStats()
 
         if secondsLeft < 0 then
-            stopTimer()
-            S.active = false
-            updateStats(S.elapsedSeconds)
-            dbg("TIMEOUT: total=%d errors=%d elapsed=%d", S.totalTyped, S.totalErrors, S.elapsedSeconds)
+            -- Timeout: call endTest so the test ends and final UI/stats are shown.
+            -- Use a message to inform the user; endTest will stop the timer and cleanup.
+            dbg("TIMEOUT reached, calling endTest() session=%d", session)
+            endTest("Time's up. Press Restart to try again.")
+            return
         end
     end
 
@@ -561,6 +557,8 @@ local function startTest()
     resetRuntime()
     clearTextArea()
     S.active   = true
+    S.testCompleted = false  -- Reset completion state for new test
+    S.timedOut = false       -- clear timeout state when starting fresh
     -- initialize blinking highlight
     if S.blinkIntervalId then clearInterval(S.blinkIntervalId) end
     S.blinkOn = false
@@ -593,13 +591,13 @@ local function startTest()
         S.cfg.mode, S.cfg.wordCount or -1, #S.fullText, safeToOneLine(S.fullText))
 end
 
-local function endTest(message)
+endTest = function(message)
     S.active = false
+    S.testCompleted = true  -- Mark test as completed to prevent auto-restart
     -- stop blinking highlight
     if S.blinkIntervalId then clearInterval(S.blinkIntervalId) end
     S.blinkIntervalId = nil
     S.blinkOn = false
-    E.restartBtn.visible = false
 
     elementCleanLoad(gurt.select('#wpm-counter'), 1)
     elementCleanLoad(gurt.select('#accuracy-counter'), 1)
@@ -661,9 +659,9 @@ gurt.body:on('keydown', function(event)
         return
     end
 
-    -- Tab: start (only when not active)
+    -- Tab: start (only when not active and not just completed or timed out)
     if key == "Tab" then
-        if not S.active then startTest() end
+        if not S.active and not S.testCompleted and not S.timedOut then startTest() end
         return
     end
 
@@ -684,9 +682,9 @@ gurt.body:on('keydown', function(event)
         return
     end
     
-    -- Auto-start on first non-control key (ignore this keypress for typing)
+    -- Auto-start on first non-control key (only if not completed and not timed out)
     if not S.active then
-        startTest()
+        if not S.testCompleted and not S.timedOut then startTest() end
         return
     end
 
@@ -792,15 +790,15 @@ E.time60:on('click', function()
     saveConfig()
 end)
 
-E.time120:on('click', function()
-    if S.active then return end
-    S.cfg.timeLimit = 120
-    E.timer.text = "120"
-    E.time30.classList:remove('active')
-    E.time60.classList:remove('active')
-    E.time120.classList:add('active')
-    saveConfig()
-end)
+-- E.time120:on('click', function()
+--     if S.active then return end
+--     S.cfg.timeLimit = 120
+--     E.timer.text = "120"
+--     E.time30.classList:remove('active')
+--     E.time60.classList:remove('active')
+--     E.time120.classList:add('active')
+--     saveConfig()
+-- end)
 
 -- Word count buttons
 E.word30:on('click', function()
@@ -821,14 +819,14 @@ E.word60:on('click', function()
     saveConfig()
 end)
 
-E.wordInf:on('click', function()
-    if S.active then return end
-    S.cfg.wordCount = 0  -- 0 means infinite mode
-    E.word30.classList:remove('active')
-    E.word60.classList:remove('active')
-    E.wordInf.classList:add('active')
-    saveConfig()
-end)
+-- E.wordInf:on('click', function()
+--     if S.active then return end
+--     S.cfg.wordCount = 30  -- 0 means infinite mode
+--     E.word30.classList:remove('active')
+--     E.word60.classList:remove('active')
+--     E.wordInf.classList:add('active')
+--     saveConfig()
+-- end)
 
 -- Mode buttons
 E.typeWords:on('click', function()
@@ -836,24 +834,24 @@ E.typeWords:on('click', function()
     S.cfg.mode = "words"
     E.typeWords.classList:add('active')
     E.typeQuotes.classList:remove('active')
-    E.typeNumbers.classList:remove('active')
+    -- E.typeNumbers.classList:remove('active')
     saveConfig()
 end)
 
-E.typeQuotes:on('click', function()
-    if S.active then return end
-    S.cfg.mode = "quotes"
-    E.typeWords.classList:remove('active')
-    E.typeQuotes.classList:add('active')
-    E.typeNumbers.classList:remove('active')
-    saveConfig()
-end)
+-- E.typeQuotes:on('click', function()
+--     if S.active then return end
+--     S.cfg.mode = "quotes"
+--     E.typeWords.classList:add('active')
+--     -- E.typeQuotes.classList:add('active')
+--     E.typeNumbers.classList:remove('active')
+--     saveConfig()
+-- end)
 
 E.typeNumbers:on('click', function()
     if S.active then return end
     S.cfg.mode = "numbers"
-    E.typeWords.classList:remove('active')
-    E.typeQuotes.classList:remove('active')
+    E.typeWords.classList:add('active')
+    -- E.typeQuotes.classList:remove('active')
     E.typeNumbers.classList:add('active')
     saveConfig()
 end)
@@ -874,9 +872,9 @@ local function applyActiveClassesFromConfig()
     elseif S.cfg.timeLimit == 60 then
         E.timer.text = "60"
         E.time60.classList:add('active')
-    elseif S.cfg.timeLimit == 120 then
-        E.timer.text = "120"
-        E.time120.classList:add('active')
+    else
+        E.timer.text = "30"
+        E.time30.classList:add('active')
     end
 
     -- words
@@ -885,14 +883,16 @@ local function applyActiveClassesFromConfig()
     elseif S.cfg.wordCount == 60 then
         E.word60.classList:add('active')
     elseif S.cfg.wordCount == 0 then
-        E.wordInf.classList:add('active')
+        S.cfg.wordCount = 30
+        E.word30.classList:add('active')
     end
 
     -- mode
     if S.cfg.mode == "words" then
         E.typeWords.classList:add('active')
     elseif S.cfg.mode == "quotes" then
-        E.typeQuotes.classList:add('active')
+        S.cfg.mode = "words"
+        E.typeWords.classList:add('active')
     elseif S.cfg.mode == "numbers" then
         E.typeNumbers.classList:add('active')
     end
@@ -902,6 +902,8 @@ end
 elementCleanLoad(gurt.select('#header'), 1)
 elementCleanLoad(gurt.select('#test-section'), 1)
 elementCleanLoad(gurt.select('#config-section'), 1)
+elementCleanLoad(gurt.select('#hosted-on'), 1)
+elementCleanLoad(gurt.select('#created-by'), 1)
 
 loadConfig()
 applyActiveClassesFromConfig()
