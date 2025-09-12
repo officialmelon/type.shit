@@ -873,6 +873,7 @@ local function applyActiveClassesFromConfig()
         E.timer.text = "60"
         E.time60.classList:add('active')
     else
+        S.cfg.timeLimit = 30
         E.timer.text = "30"
         E.time30.classList:add('active')
     end
