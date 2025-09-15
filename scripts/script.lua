@@ -903,7 +903,6 @@ end
 elementCleanLoad(gurt.select('#header'), 1)
 elementCleanLoad(gurt.select('#test-section'), 1)
 elementCleanLoad(gurt.select('#config-section'), 1)
-elementCleanLoad(gurt.select('#hosted-on'), 1)
 elementCleanLoad(gurt.select('#created-by'), 1)
 
 loadConfig()
