@@ -1,0 +1,53 @@
+[server]
+host = "0.0.0.0"
+port = 4878
+protocol_version = "1.0.0"
+alpn_identifier = "GURT/1.0"
+max_connections = 100
+max_message_size = "10MB"
+
+[server.timeouts]
+handshake = 5
+request = 30
+connection = 10
+pool_idle = 300
+
+# Default site (served when no matching domain is found)
+default_site = "melon.aura"
+
+[sites."type.shit"]
+domain = "type.shit"
+document_root = "."
+tls.certificate = "config/localhost+2.pem"
+tls.private_key = "config/localhost+2-key.pem"
+
+[sites."type.shit".security]
+deny_files = ["*.env", "*.config", ".git/*", "node_modules/*"]
+allowed_methods = ["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS", "PATCH"]
+rate_limit_requests = 100
+rate_limit_connections = 10
+
+[sites."type.shit".headers]
+server = "GURT/1.0.0"
+"x-frame-options" = "SAMEORIGIN"
+"x-content-type-options" = "nosniff"
+
+# Global logging configuration
+[logging]
+level = "info"
+log_requests = true
+log_responses = false
+
+# Global error pages (can be overridden per site)
+[error_pages.default]
+"400" = '''<!DOCTYPE html>
+<html><head><title>400 Bad Request</title></head>
+<body><h1>400 - Bad Request</h1><p>The request could not be understood by the server.</p><a href="/">Back to home</a></body></html>'''
+
+"404" = '''<!DOCTYPE html>
+<html><head><title>404 Not Found</title></head>
+<body><h1>404 - Not Found</h1><p>The requested resource was not found on this server.</p><a href="/">Back to home</a></body></html>'''
+
+"500" = '''<!DOCTYPE html>
+<html><head><title>500 Internal Server Error</title></head>
+<body><h1>500 - Internal Server Error</h1><p>Something went wrong on our end.</p><a href="/">Back to home</a></body></html>'''
