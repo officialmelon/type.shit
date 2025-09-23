@@ -3,33 +3,76 @@
 	<icon src="https://github.com/officialmelon/type.shit/blob/master/assets/brand.png?raw=true">
 	<meta name="theme-color" content="#323437">
 	<meta name="description" content="A minimalist typing test - type.shit">
-	<font name="roboto" src="https://fonts.gstatic.com/s/roboto/v48/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3KUBGEe.woff2" />
+	<font name="roboto-mono" src="https://fonts.gstatic.com/s/robotomono/v31/L0x5DF4xlVMF-BfR8bXMIjhLq38.woff2" />
 
     <style>
         body {
-            bg-[#323437]
+            bg-[#323437] text-[#d1d0c5] font-roboto-mono
         }
 
         .header-section {
-            flex flex-row w-full justify-between
+            mt-3 w-full h-50 
+        }
+
+        .config-bar {
+            w-full mx-auto flex flex-row gap-6 justify-center
+        }
+
+        .config-options {
+            flex flex-row gap-2
+        }
+
+        .config-label {
+            text-center
+        }
+
+        .config-btn {
+            bg-[#2c2e31] px-3 py-1 rounded cursor-pointer mx-auto hover:bg-[#3c4043] hover:text-[#d1d0c5] 
         }
 
         .word-container {
-            mx-auto w-100 h-50 bg-[#242527]
+            mx-auto w-100 text-center flex flex-wrap flex-row mt-4 justify-start gap-0 mt-30px
         }
 
-        .top-left-logo {
-            w-35
+        .container-inactive {
+            opacity-50 bg-[#323437]
         }
 
-        .header-setting-icon {
-            w-12
+        /* Text styles */
+
+        .word {
+            flex flex-row text-center gap-0 justify-center
         }
 
         .text-to-type {
-            text-xl font-bold text-[#ffffff]
+            text-xl inline-block ml-[-4px]
+        }
+
+        .text-to-type-spacing {
+            text-xl inline-block ml-[-2px] opacity-0
+        }
+
+        .text-to-type-fix-caps {
+            text-xl inline-block mr-[-5px]
+        }
+
+        .untyped {
+            text-[#646669]
+        }
+
+        .typed {
+            text-[#d1d0c5]
+        }
+
+        .top-left-logo {
+            ml-10 w-25
+        }
+
+        .top-right-settings {
+            mr-10 w-25
         }
     </style>
+    <script src="scripts/index.lua"></script>
 </head>
 
 <body>
@@ -37,8 +80,40 @@
         <div style="top-left-logo">
             <img style="top-left-logo" src="https://github.com/officialmelon/type.shit/blob/master/type.shit.2.0/assets/images/LeftLogo.png?raw=true" alt="type.shit">
         </div>
-        <div style="header-setting-icon">
-            <img style="header-setting-icon" src="https://github.com/officialmelon/type.shit/blob/master/type.shit.2.0/assets/images/settings.png?raw=true" alt="settings">
-        </div>
+    </div>
+
+    <div style="config-bar">
+		<div style="config-group">
+			<div style="config-label">time</div>
+			<div style="config-options">
+				<button id="time-30" style="config-btn">30</button>
+				<button id="time-60" style="config-btn">60</button>
+                <button id="time-90" style="config-btn">90</button>
+                <button id="time-120" style="config-btn">120</button>
+			</div>
+		</div>
+
+        <div style="config-group">
+			<div style="config-label">type</div>
+			<div style="config-options">
+				<button id="type-words" style="config-btn">words</button>
+				<button id="type-num" style="config-btn">numbers</button>
+                <button id="type-quotes" style="config-btn">quotes</button>
+			</div>
+		</div>
+
+        <div style="config-group">
+			<div style="config-label">words</div>
+			<div style="config-options">
+				<button id="time-30" style="config-btn">30</button>
+				<button id="time-60" style="config-btn">60</button>
+                <button id="time-90" style="config-btn">90</button>
+                <button id="time-inf" style="config-btn">inf</button>
+			</div>
+		</div>
+    </div>
+
+    <div id="word-container" style="word-container">
+
     </div>
 </body>
